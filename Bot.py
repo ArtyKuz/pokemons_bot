@@ -37,5 +37,6 @@ register_game_handlers(dp)
 register_hunting_handlers(dp)
 register_pokemon_league_handlers(dp)
 
+
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True, on_startup=set_main_menu)
