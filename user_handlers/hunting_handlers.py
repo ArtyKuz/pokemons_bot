@@ -116,8 +116,8 @@ async def figth(callback: CallbackQuery, state: FSMContext):
                     data['dice'] += 1
                 else:
                     await callback.message.edit_text('Ваш покемон проиграл!',
-                                                     reply_markup=create_inline_kb(1, 'Продолжить охоту', 'Вернуться в '
-                                                                                                          'главное меню'))
+                                                     reply_markup=create_inline_kb(1, 'Продолжить охоту',
+                                                                                   'Вернуться в главное меню'))
 
 
 async def handler_take_pokemon(callback: CallbackQuery, state: FSMContext):

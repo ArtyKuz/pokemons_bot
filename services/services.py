@@ -68,7 +68,6 @@ def get_pokemon_for_hunting():
         return random.choice([i[0] for i in cur.execute(f'SELECT name FROM Pokemons WHERE Level < 2').fetchall()])
 
 
-
 def get_characteristic_for_fight(pokemon, pokemon1, id):
     '''Функция создает два словаря с характеристиками покемонов для сражения'''
 
@@ -131,7 +130,7 @@ def get_fight(dice, pokemon_enemy, my_pokemon):
 
 def enhance_pokemon(pokemon, id):
     """Функция для повышения характеристик покемона после
-    применения "еды для усиления покемона\""""
+    применения 'еды для усиления покемона'"""
 
     pokemon["HP"] += 10
     pokemon["Атака"] += 10
@@ -230,17 +229,13 @@ def start_fortune(id):
             select = random.sample(wheel, counts=[10, 10, 5, 3, 2], k=1)[0]
             if select == 'eat':
                 cur.execute(f"UPDATE Users SET eat = eat + 1, wheel_of_Fortune = 0 WHERE id = {id}")
-                base.commit()
-                return select
             elif type(select) == int:
                 cur.execute(f"UPDATE Users SET coins = coins + {select}, wheel_of_Fortune = 0 WHERE id = {id}")
-                base.commit()
-                return select
             elif select == 'evolution_stone':
                 cur.execute(f"UPDATE Users SET evolution_stone = evolution_stone + 1, wheel_of_Fortune = 0"
                             f" WHERE id = {id}")
-                base.commit()
-                return select
+            base.commit()
+            return select
         return False
 
 
@@ -261,7 +256,7 @@ def update_icons(id, icon):
         cur = base.cursor()
         icons = cur.execute(f'SELECT icons FROM Users WHERE id = {id}').fetchone()[0]
         if icons:
-            icons+=f', {icon}'
+            icons += f', {icon}'
             cur.execute(f'UPDATE Users SET icons = "{icons}", point = point+1 WHERE id = {id}')
             base.commit()
         else:

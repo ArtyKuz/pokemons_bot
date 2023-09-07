@@ -132,7 +132,7 @@ async def evolution_pokemon_handler(callback: CallbackQuery, state: FSMContext):
                                       reply_markup=create_inline_kb(1, 'Мои покемоны', 'Продолжить игру 🔄'))
 
 
-async def wheel_of_Fortune(callback: CallbackQuery, state: FSMContext):
+async def wheel_of_fortune(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     user_date = callback.message.date.date().strftime('%d.%m.%Y')
     with sqlite3.connect('Pokemon.db') as base:
@@ -214,7 +214,7 @@ def register_game_handlers(dp: Dispatcher):
     dp.register_callback_query_handler(description_person_pokemon, text=names_pokemons, state=FSMPokemon.game)
     dp.register_callback_query_handler(evolution_pokemon_handler, text='Эволюционировать покемона 🌀',
                                        state=FSMPokemon.game)
-    dp.register_callback_query_handler(wheel_of_Fortune, text='Колесо Фортуны 🎰', state=FSMPokemon.game)
+    dp.register_callback_query_handler(wheel_of_fortune, text='Колесо Фортуны 🎰', state=FSMPokemon.game)
     dp.register_callback_query_handler(spin_wheel_fortune, text='Крутить колесо!', state=FSMPokemon.game)
     dp.register_callback_query_handler(backpack, text='Рюкзак 🎒', state=FSMPokemon.game)
     dp.register_callback_query_handler(shop_menu, text=['Магазин 🛍', 'Продолжить покупки'], state=FSMPokemon.game)
