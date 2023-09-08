@@ -94,8 +94,9 @@ async def watch_person_pokemons(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     with sqlite3.connect('Pokemon.db') as base:
         cur = base.cursor()
-        s = cur.execute(f'SELECT pokemons FROM Users WHERE id = {callback.from_user.id}').fetchone()[0].split()
-        await callback.message.answer('Ваши покемоны!', reply_markup=create_inline_kb(2, *s, 'Продолжить игру 🔄'))
+        user_pokemons = cur.execute(f'SELECT pokemons FROM Users WHERE id = {callback.from_user.id}').fetchone()[0].split()
+        await callback.message.answer('Ваши покемоны!', reply_markup=create_inline_kb(2, *user_pokemons,
+                                                                                      'Продолжить игру 🔄'))
 
 
 # Просмотр информации о личном покемоне

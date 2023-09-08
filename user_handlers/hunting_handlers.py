@@ -7,6 +7,7 @@ from aiogram.dispatcher.filters import Text
 from aiogram.types import CallbackQuery
 from FSM import FSMPokemon
 from keyboard.keyboards import create_inline_kb
+from services.classes import Pokemon
 from services.services import get_description, get_pokemon_for_hunting, get_characteristic_for_fight, get_fight, \
     take_pokemon, access_to_hunting, enhance_pokemon, get_text_for_fight
 from lexicon.lexicon import LEXICON
@@ -59,25 +60,33 @@ async def hunting_pokemons(callback: CallbackQuery, state: FSMContext):
 
 async def start_fight(callback: CallbackQuery, state: FSMContext):
     async with state.proxy() as data:
-        data['pokemon'], data['my_pokemon'], data['eat'] = get_characteristic_for_fight(data['pokemon'], callback.data,
-                                                                                        callback.from_user.id)
+        user_pokemon = Pokemon(callback.data)
+        enemy_pokemon = Pokemon(data['pokemon'])
+        data['user_pokemon'] = user_pokemon
+        data['enemy_pokemon'] = enemy_pokemon
+        # data['pokemon'], data['my_pokemon'], data['eat'] = get_characteristic_for_fight(data['pokemon'], callback.data,
+        #                                                                                 callback.from_user.id)
+        with sqlite3.connect('Pokemon.db') as base:
+            cur = base.cursor()
+            data['eat'] = cur.execute(f'SELECT eat FROM Users WHERE id = {callback.from_user.id}').fetchone()[0]
         data['dice'] = random.randrange(0, 2)
         if data['dice']:
             await callback.answer('🎲 Ваш ход будет первым!', show_alert=True)
         else:
-            await callback.answer(f'🎲 {data["pokemon"]["Name"]} будет атаковать первым!', show_alert=True)
+            await callback.answer(f'🎲 {enemy_pokemon} будет атаковать первым!', show_alert=True)
         await callback.message.edit_text(
-            f'💥💥💥\n\n<b>{data["my_pokemon"]["Name"]}</b> против <b>{data["pokemon"]["Name"]}</b>!\n\n💥💥💥',
+            f'💥💥💥\n\n<b>{user_pokemon}</b> против <b>{enemy_pokemon}</b>!\n\n💥💥💥',
             reply_markup=create_inline_kb(1, 'Начать бой!'))
 
 
-async def figth(callback: CallbackQuery, state: FSMContext):
+async def fight(callback: CallbackQuery, state: FSMContext):
     async with state.proxy() as data:
+        user_pokemon: Pokemon = data['user_pokemon']
+        enemy_pokemon: Pokemon = data['enemy_pokemon']
         if 'Усилить покемона' in callback.data:
             data['eat'] -= 1
-            data["my_pokemon"] = enhance_pokemon(data["my_pokemon"], callback.from_user.id)
-            await callback.message.edit_text(get_text_for_fight(data['dice'], data["my_pokemon"], data['pokemon'],
-                                                                enhance=True),
+            data['user_pokemon'] = user_pokemon.enhance(callback.from_user.id)
+            await callback.message.edit_text(get_text_for_fight(user_pokemon, enemy_pokemon, enhance=True),
                                              reply_markup=create_inline_kb(1, 'Атаковать!', 'Сдаться 🏳️'))
 
         elif callback.data == 'Сдаться 🏳️':
@@ -86,28 +95,30 @@ async def figth(callback: CallbackQuery, state: FSMContext):
         else:
             # Ход игрока
             if data['dice']:
-                dice_attack, dice_defence, damage, data['pokemon'] = get_fight(1, data['pokemon'], data['my_pokemon'])
-                await callback.answer(f'{data["my_pokemon"]["Name"]} - {dice_attack} 🎲 (Атака)\n\n'
-                                      f'{data["pokemon"]["Name"]} - {dice_defence} 🎲 (Защита)', show_alert=True)
-                if data['pokemon']['HP'] > 0:
-                    await callback.message.edit_text(get_text_for_fight(data['dice'], data["my_pokemon"], data['pokemon'],
+                dice_attack, dice_defence, damage, enemy_pokemon = get_fight(user_pokemon, enemy_pokemon)
+                data['enemy_pokemon'] = enemy_pokemon
+                await callback.answer(f'{user_pokemon.name} - {dice_attack} 🎲 (Атака)\n\n'
+                                      f'{enemy_pokemon.name} - {dice_defence} 🎲 (Защита)', show_alert=True)
+                if enemy_pokemon.hp > 0:
+                    await callback.message.edit_text(get_text_for_fight(user_pokemon, enemy_pokemon, dice=data['dice'],
                                                                         damage=damage),
                                                      reply_markup=create_inline_kb(1, 'Ход противника', 'Сдаться 🏳️')
                                                      )
                     data['dice'] -= 1
                 else:
                     await callback.message.edit_text(
-                        f'Ура! Вы победили! 🎊\n\nТеперь <b>{data["pokemon"]["Name"]}</b> может стать вашим покемоном!',
+                        f'Ура! Вы победили! 🎊\n\nТеперь <b>{enemy_pokemon.name}</b> может стать вашим покемоном!',
                         reply_markup=create_inline_kb(1, 'Забрать покемона', 'Продолжить охоту',
                                                       'Вернуться в главное меню'
                                                       ))
             # Ход противника (бота)
             else:
-                dice_attack, dice_defence, damage, data['my_pokemon'] = get_fight(0, data['pokemon'], data['my_pokemon'])
-                await callback.answer(f'{data["pokemon"]["Name"]} - {dice_attack} 🎲 (Атака)\n\n'
-                                      f'{data["my_pokemon"]["Name"]} - {dice_defence} 🎲 (Защита)', show_alert=True)
-                if data['my_pokemon']['HP'] > 0:
-                    await callback.message.edit_text(get_text_for_fight(data['dice'], data["my_pokemon"], data['pokemon'],
+                dice_attack, dice_defence, damage, user_pokemon = get_fight(enemy_pokemon, user_pokemon)
+                data['user_pokemon'] = user_pokemon
+                await callback.answer(f'{enemy_pokemon.name} - {dice_attack} 🎲 (Атака)\n\n'
+                                      f'{user_pokemon.name} - {dice_defence} 🎲 (Защита)', show_alert=True)
+                if user_pokemon.hp > 0:
+                    await callback.message.edit_text(get_text_for_fight(user_pokemon, enemy_pokemon, dice=data['dice'],
                                                                         damage=damage),
                                                      reply_markup=create_inline_kb(1, 'Атаковать!',
                                                                                    f'Усилить покемона ({data["eat"]} 🍔)',
@@ -122,8 +133,8 @@ async def figth(callback: CallbackQuery, state: FSMContext):
 
 async def handler_take_pokemon(callback: CallbackQuery, state: FSMContext):
     async with state.proxy() as data:
-        if take_pokemon(data["pokemon"]["Name"], callback.from_user.id):
-            await callback.message.edit_text(f'Поздравляю! Теперь {data["pokemon"]["Name"]} ваш покемон!',
+        if take_pokemon(data['enemy_pokemon'].name, callback.from_user.id):
+            await callback.message.edit_text(f'Поздравляю! Теперь {data["enemy_pokemon"].name} ваш покемон!',
                                              reply_markup=create_inline_kb(1, 'Продолжить охоту', 'Вернуться в '
                                                                                                   'главное меню'))
         else:
@@ -162,9 +173,9 @@ def register_hunting_handlers(dp: Dispatcher):
                                        state=(FSMPokemon.game, FSMPokemon.hunting, FSMPokemon.replace_pokemon))
     dp.register_callback_query_handler(hunting_pokemons, text='Поймать покемона', state=FSMPokemon.hunting)
     dp.register_callback_query_handler(start_fight, text=names_pokemons, state=FSMPokemon.hunting)
-    dp.register_callback_query_handler(figth, text=['Начать бой!', 'Атаковать!', 'Ход противника', 'Сдаться 🏳️'],
+    dp.register_callback_query_handler(fight, text=['Начать бой!', 'Атаковать!', 'Ход противника', 'Сдаться 🏳️'],
                                        state=FSMPokemon.hunting)
-    dp.register_callback_query_handler(figth, Text(startswith='Усилить покемона'), state=FSMPokemon.hunting)
+    dp.register_callback_query_handler(fight, Text(startswith='Усилить покемона'), state=FSMPokemon.hunting)
     dp.register_callback_query_handler(handler_take_pokemon, text='Забрать покемона', state=FSMPokemon.hunting)
     dp.register_callback_query_handler(select_replace_pokemon, text='Выбрать покемона для замены',
                                        state=FSMPokemon.hunting)

@@ -8,8 +8,9 @@ from aiogram.types import CallbackQuery
 from FSM import FSMPokemon
 from keyboard.keyboards import create_inline_kb
 from lexicon.lexicon import LEXICON
+from services.classes import Pokemon
 from services.services import get_description, get_characteristic_for_fight, get_fight, update_icons, \
-    get_text_for_icons, enhance_pokemon, get_text_for_fight
+    get_text_for_icons, enhance_pokemon, get_text_for_fight, access_to_pokemon_league
 
 base = sqlite3.connect('Pokemon.db')
 cur = base.cursor()
@@ -24,17 +25,18 @@ icons = {1: 'Завоевать Каменный значок 🔘', 2: 'Зав�
 async def start_pokemon_league(callback: CallbackQuery, state: FSMContext):
     await FSMPokemon.pokemon_league.set()
     await callback.answer()
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        if len(cur.execute('SELECT pokemons FROM Users WHERE id = {}'.format(callback.from_user.id)).fetchone()[
-                   0].split()) < 7:
-            await callback.message.answer('Для участия в Лиге Покемонов у вас должно быть не менее 7 покемонов. '
-                                          'Поймать покемонов можно в режиме <b>"Охота на покемонов"</b>.',
-                                          reply_markup=create_inline_kb(1, 'Вернуться в главное меню'))
-        else:
-            point = cur.execute(f'SELECT point FROM Users WHERE id = {callback.from_user.id}').fetchone()[0]
-            await callback.message.answer(f'{get_text_for_icons(point, LEXICON["start_pokemon_league"])}',
-                                          reply_markup=create_inline_kb(1, icons[point], 'Вернуться в главное меню'))
+    if not access_to_pokemon_league(callback.from_user.id):
+        await callback.message.answer('Для участия в Лиге Покемонов у вас должно быть не менее 7 покемонов. '
+                                      'Поймать покемонов можно в режиме <b>"Охота на покемонов"</b>.',
+                                      reply_markup=create_inline_kb(1, 'Вернуться в главное меню'))
+    else:
+        async with state.proxy() as data:
+            with sqlite3.connect('Pokemon.db') as base:
+                cur = base.cursor()
+                data['point'] = cur.execute(f'SELECT point FROM Users WHERE id = {callback.from_user.id}').fetchone()[0]
+            await callback.message.answer(f'{get_text_for_icons(data["point"], LEXICON["start_pokemon_league"])}',
+                                          reply_markup=create_inline_kb(1, icons[data["point"]],
+                                                                        'Вернуться в главное меню'))
 
 
 async def pre_start_fight(callback: CallbackQuery, state: FSMContext):
@@ -46,9 +48,8 @@ async def pre_start_fight(callback: CallbackQuery, state: FSMContext):
             data['level'] = 1
             data['my_point'] = 0
             data['enemy_point'] = 0
-            data['all_enemy_pokemons']: list = cur.execute(f'SELECT pokemons FROM Icons WHERE point = ('
-                                                           f'SELECT point FROM Users WHERE id = {callback.from_user.id})').fetchone() \
-                [0].split()
+            data['all_enemy_pokemons']: list = cur.execute(
+                f'SELECT pokemons FROM Icons WHERE point = {data["point"]}').fetchone()[0].split()
             data['my_pokemons']: set = set(cur.execute(f'SELECT pokemons FROM Users WHERE id = '
                                                        f'{callback.from_user.id}').fetchone()[0].split())
             await callback.message.answer(f'Для того чтобы завоевать {data["icon"]} вам придется сразиться с:\n'
@@ -63,8 +64,8 @@ async def pre_start_fight(callback: CallbackQuery, state: FSMContext):
 async def select_pokemon(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     async with state.proxy() as data:
-        data['enemy_pokemon']: str = random.sample(data['all_enemy_pokemons'], k=1)[0]
-        data['all_enemy_pokemons']: set = set(data['all_enemy_pokemons']) - {data['enemy_pokemon']}
+        data['enemy_pokemon']: Pokemon = Pokemon(random.sample(data['all_enemy_pokemons'], k=1)[0])
+        data['all_enemy_pokemons']: set = set(data['all_enemy_pokemons']) - {str(data['enemy_pokemon'])}
         image, description = get_description(data['enemy_pokemon'], full=False)
         await callback.message.answer_photo(image, caption=f'{description}\n\nВыберите своего покемона!',
                                             reply_markup=create_inline_kb(2, *data['my_pokemons']))
@@ -73,32 +74,36 @@ async def select_pokemon(callback: CallbackQuery, state: FSMContext):
 async def start_fight_for_icons(callback: CallbackQuery, state: FSMContext):
     async with state.proxy() as data:
         data['my_pokemons'] = data['my_pokemons'] - {callback.data}
-        data['enemy_pokemon'], data['my_pokemon'], data['eat'] = get_characteristic_for_fight(data['enemy_pokemon'],
-                                                                                              callback.data,
-                                                                                              callback.from_user.id)
+        user_pokemon = Pokemon(callback.data)
+        enemy_pokemon = data['enemy_pokemon']
+        data['user_pokemon'] = user_pokemon
+        with sqlite3.connect('Pokemon.db') as base:
+            cur = base.cursor()
+            data['eat'] = cur.execute(f'SELECT eat FROM Users WHERE id = {callback.from_user.id}').fetchone()[0]
         data['dice'] = random.randrange(0, 2)
         if data['dice']:
             await callback.answer('🎲 Ваш ход будет первым!', show_alert=True)
         else:
-            await callback.answer(f'🎲 {data["enemy_pokemon"]["Name"]} будет атаковать первым!', show_alert=True)
+            await callback.answer(f'🎲 {enemy_pokemon} будет атаковать первым!', show_alert=True)
         await callback.message.answer(
-            f'<b>{data["level"]} - Раунд!</b> 💥💥💥\n\n<b>{data["my_pokemon"]["Name"]}</b> против <b>{data["enemy_pokemon"]["Name"]}</b>!',
+            f'<b>{data["level"]} - Раунд!</b> 💥💥💥\n\n<b>{user_pokemon}</b> против <b>{enemy_pokemon}</b>!',
             reply_markup=create_inline_kb(1, 'Начать бой!'))
 
 
 async def fight_for_icons(callback: CallbackQuery, state: FSMContext):
     async with state.proxy() as data:
+        user_pokemon: Pokemon = data['user_pokemon']
+        enemy_pokemon: Pokemon = data['enemy_pokemon']
         if 'Усилить покемона' in callback.data:
             data['eat'] -= 1
-            data["my_pokemon"] = enhance_pokemon(data["my_pokemon"], callback.from_user.id)
-            await callback.message.edit_text(get_text_for_fight(data['dice'], data["my_pokemon"], data["enemy_pokemon"],
-                                                                enhance=True),
+            data['my_pokemon'] = user_pokemon.enhance(callback.from_user.id)
+            await callback.message.edit_text(get_text_for_fight(user_pokemon, enemy_pokemon, enhance=True),
                                              reply_markup=create_inline_kb(1, 'Атаковать!', 'Сдаться 🏳️'))
         elif callback.data == 'Сдаться 🏳️':
             data['enemy_point'] += 1
             if data['my_point'] < 2 and data['enemy_point'] < 2:
                 data['level'] += 1
-                await callback.message.edit_text(f'Победа присуждена <b>{data["enemy_pokemon"]["Name"]}!</b>',
+                await callback.message.edit_text(f'Победа присуждена <b>{enemy_pokemon}!</b>',
                                                  reply_markup=create_inline_kb(1, 'Продолжить',
                                                                                'Вернуться в главное меню'))
             else:
@@ -107,14 +112,13 @@ async def fight_for_icons(callback: CallbackQuery, state: FSMContext):
                                                                                'Вернуться в главное меню'))
         # Ход игрока
         elif data['dice']:
-            dice_attack, dice_defence, damage, data['enemy_pokemon'] = get_fight(1, data['enemy_pokemon'],
-                                                                                 data['my_pokemon'])
-            await callback.answer(f'{data["my_pokemon"]["Name"]} - {dice_attack} 🎲 (Атака)\n\n'
-                                  f'{data["enemy_pokemon"]["Name"]} - {dice_defence} 🎲 (Защита)', show_alert=True)
-            if data['enemy_pokemon']['HP'] > 0:
+            dice_attack, dice_defence, damage, enemy_pokemon = get_fight(user_pokemon, enemy_pokemon)
+            data['enemy_pokemon'] = enemy_pokemon
+            await callback.answer(f'{user_pokemon} - {dice_attack} 🎲 (Атака)\n\n'
+                                  f'{enemy_pokemon} - {dice_defence} 🎲 (Защита)', show_alert=True)
+            if enemy_pokemon.hp > 0:
                 await callback.message.edit_text(
-                    get_text_for_fight(data['dice'], data["my_pokemon"], data["enemy_pokemon"],
-                                       damage=damage),
+                    get_text_for_fight(user_pokemon, enemy_pokemon, dice=data['dice'], damage=damage),
                     reply_markup=create_inline_kb(1, 'Ход противника', 'Сдаться 🏳️'))
                 data['dice'] -= 1
             else:
@@ -122,7 +126,7 @@ async def fight_for_icons(callback: CallbackQuery, state: FSMContext):
                 if data['my_point'] < 2 and data['enemy_point'] < 2:
                     data['level'] += 1
                     await callback.message.edit_text(
-                        f'<b>{data["my_pokemon"]["Name"]}</b> победил!',
+                        f'<b>{user_pokemon}</b> победил!',
                         reply_markup=create_inline_kb(1, 'Продолжить', 'Вернуться в главное меню'))
                 else:
                     if data['my_point'] > data['enemy_point']:
@@ -137,14 +141,13 @@ async def fight_for_icons(callback: CallbackQuery, state: FSMContext):
 
         # Ход противника (бота)
         else:
-            dice_attack, dice_defence, damage, data['my_pokemon'] = get_fight(0, data['enemy_pokemon'],
-                                                                              data['my_pokemon'])
-            await callback.answer(f'{data["enemy_pokemon"]["Name"]} - {dice_attack} 🎲 (Атака)\n\n'
-                                  f'{data["my_pokemon"]["Name"]} - {dice_defence} 🎲 (Защита)', show_alert=True)
-            if data['my_pokemon']['HP'] > 0:
+            dice_attack, dice_defence, damage, user_pokemon = get_fight(enemy_pokemon, user_pokemon)
+            data['user_pokemon'] = user_pokemon
+            await callback.answer(f'{enemy_pokemon} - {dice_attack} 🎲 (Атака)\n\n'
+                                  f'{user_pokemon} - {dice_defence} 🎲 (Защита)', show_alert=True)
+            if user_pokemon.hp > 0:
                 await callback.message.edit_text(
-                    get_text_for_fight(data['dice'], data["my_pokemon"], data["enemy_pokemon"],
-                                       damage=damage),
+                    get_text_for_fight(user_pokemon, enemy_pokemon, dice=data['dice'], damage=damage),
                     reply_markup=create_inline_kb(1, 'Атаковать!',
                                                   f'Усилить покемона ({data["eat"]} 🍔)',
                                                   'Сдаться 🏳️') if data['eat'] else
@@ -154,7 +157,7 @@ async def fight_for_icons(callback: CallbackQuery, state: FSMContext):
                 data['enemy_point'] += 1
                 if data['my_point'] < 2 and data['enemy_point'] < 2:
                     data['level'] += 1
-                    await callback.message.edit_text(f'<b>{data["enemy_pokemon"]["Name"]}</b> победил!',
+                    await callback.message.edit_text(f'<b>{enemy_pokemon}</b> победил!',
                                                      reply_markup=create_inline_kb(1, 'Продолжить',
                                                                                    'Вернуться в главное меню'))
                 else:

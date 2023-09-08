@@ -1,6 +1,8 @@
 import random
 import sqlite3
 
+from services.classes import Pokemon
+
 
 def get_description(pokemon_name, full=True):
     '''Функция для получения описания покемона.
@@ -95,86 +97,47 @@ def get_characteristic_for_fight(pokemon, pokemon1, id):
         return pok, pok1, eat
 
 
-def get_fight(dice, pokemon_enemy, my_pokemon):
+def get_fight(pokemon1: Pokemon, pokemon2: Pokemon):
     '''Функция для расчета характеристик во время боя покемонов'''
 
     dice_attack = random.randrange(1, 7)
     dice_defense = random.randrange(1, 7)
-    if dice:
-        if (pokemon_enemy['Type'] in my_pokemon['Преимущество']) and dice_attack != 6:
-            dice_attack += 1
-        if (my_pokemon['Type'] in pokemon_enemy['Преимущество']) and dice_defense != 6:
-            dice_defense += 1
-        attack = my_pokemon['Атака'] * (dice_attack / 10)
-        defense = pokemon_enemy['Защита'] * (dice_defense / 10)
-        damage = round(attack - defense)
-        if damage > 0:
-            pokemon_enemy['HP'] = round(pokemon_enemy['HP'] - damage)
-        else:
-            damage = 0
-        return dice_attack, dice_defense, damage, pokemon_enemy
-    else:
-        if (my_pokemon['Type'] in pokemon_enemy['Преимущество']) and dice_attack != 6:
-            dice_attack += 1
-        if (pokemon_enemy['Type'] in my_pokemon['Преимущество']) and dice_defense != 6:
-            dice_defense += 1
-        attack = pokemon_enemy['Атака'] * (dice_attack / 10)
-        defense = my_pokemon['Защита'] * (dice_defense / 10)
-        damage = round(attack - defense)
-        if damage > 0:
-            my_pokemon['HP'] = round(my_pokemon['HP'] - damage)
-        else:
-            damage = 0
-        return dice_attack, dice_defense, damage, my_pokemon
+    if (pokemon2.type in pokemon1.superiority) and dice_attack < 6:
+        dice_attack += 1
+    if (pokemon1.type in pokemon2.superiority) and dice_defense < 6:
+        dice_defense += 1
+    attack = pokemon1.attack * (dice_attack / 10)
+    defense = pokemon2.defense * (dice_defense / 10)
+    damage = round(attack - defense) if round(attack - defense) > 0 else 0
+    pokemon2.hp -= damage
+    return dice_attack, dice_defense, damage, pokemon2
 
 
-def enhance_pokemon(pokemon, id):
-    """Функция для повышения характеристик покемона после
-    применения 'еды для усиления покемона'"""
-
-    pokemon["HP"] += 10
-    pokemon["Атака"] += 10
-    pokemon["Защита"] += 10
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        cur.execute(f"UPDATE Users SET eat = eat - 1 WHERE id = {id}")
-        base.commit()
-    return pokemon
-
-
-def get_text_for_fight(dice, my_pokemon, pokemon_enemy, damage=None, enhance=None):
+def get_text_for_fight(user_pokemon: Pokemon, enemy_pokemon: Pokemon, dice=None, damage=None, enhance=None):
     if enhance:
-        return f'<b>{my_pokemon["Name"]}</b>\n' \
-               f'Здоровье 💊 - <b>{my_pokemon["HP"]} (+10)</b>\n' \
-               f'Атака ⚔ - <b>{my_pokemon["Атака"]} (+10)</b>\n' \
-               f'Защита 🛡 - <b>{my_pokemon["Защита"]} (+10)</b>\n' \
+        return f'<b>{user_pokemon.name}</b>\n' \
+               f'Здоровье 💊 - <b>{user_pokemon.hp} (+10)</b>\n' \
+               f'Атака ⚔ - <b>{user_pokemon.attack} (+10)</b>\n' \
+               f'Защита 🛡 - <b>{user_pokemon.defense} (+10)</b>\n' \
                f'----------------------------------------------------------\n' \
-               f'<b>{pokemon_enemy["Name"]}</b>\n' \
-               f'Здоровье 💊 - <b>{pokemon_enemy["HP"]}</b>\n' \
-               f'Атака ⚔ - <b>{pokemon_enemy["Атака"]}</b>\n' \
-               f'Защита 🛡 - <b>{pokemon_enemy["Защита"]}</b>'
+               f'<b>{enemy_pokemon.name}</b>\n' \
+               f'Здоровье 💊 - <b>{enemy_pokemon.hp}</b>\n' \
+               f'Атака ⚔ - <b>{enemy_pokemon.attack}</b>\n' \
+               f'Защита 🛡 - <b>{enemy_pokemon.defense}</b>'
     elif dice:
-        return f'{my_pokemon["Name"]} наносит <b>{damage}</b> урона! 💥\n\n' \
-               f'<b>{my_pokemon["Name"]}</b>\n' \
-               f'Здоровье 💊 - <b>{my_pokemon["HP"]}</b>\n' \
-               f'Атака ⚔ - <b>{my_pokemon["Атака"]}</b>\n' \
-               f'Защита 🛡 - <b>{my_pokemon["Защита"]}</b>\n' \
-               f'----------------------------------------------------------\n' \
-               f'<b>{pokemon_enemy["Name"]}</b>\n' \
-               f'Здоровье 💊 - <b>{pokemon_enemy["HP"]}</b>\n' \
-               f'Атака ⚔ - <b>{pokemon_enemy["Атака"]}</b>\n' \
-               f'Защита 🛡 - <b>{pokemon_enemy["Защита"]}</b>'
+        text = f'{user_pokemon.name} наносит <b>{damage}</b> урона! 💥\n\n'
     else:
-        return f'{pokemon_enemy["Name"]} наносит <b>{damage}</b> урона! 💥\n\n' \
-               f'<b>{my_pokemon["Name"]}</b>\n' \
-               f'Здоровье 💊 - <b>{my_pokemon["HP"]}</b>\n' \
-               f'Атака ⚔ - <b>{my_pokemon["Атака"]}</b>\n' \
-               f'Защита 🛡 - <b>{my_pokemon["Защита"]}</b>\n' \
-               f'----------------------------------------------------------\n' \
-               f'<b>{pokemon_enemy["Name"]}</b>\n' \
-               f'Здоровье 💊 - <b>{pokemon_enemy["HP"]}</b>\n' \
-               f'Атака ⚔ - <b>{pokemon_enemy["Атака"]}</b>\n' \
-               f'Защита 🛡 - <b>{pokemon_enemy["Защита"]}</b>'
+        text = f'{enemy_pokemon.name} наносит <b>{damage}</b> урона! 💥\n\n'
+    text += f'<b>{user_pokemon.name}</b>\n' \
+            f'Здоровье 💊 - <b>{user_pokemon.hp}</b>\n' \
+            f'Атака ⚔ - <b>{user_pokemon.attack}</b>\n' \
+            f'Защита 🛡 - <b>{user_pokemon.defense}</b>\n' \
+            f'----------------------------------------------------------\n' \
+            f'<b>{enemy_pokemon.name}</b>\n' \
+            f'Здоровье 💊 - <b>{enemy_pokemon.hp}</b>\n' \
+            f'Атака ⚔ - <b>{enemy_pokemon.attack}</b>\n' \
+            f'Защита 🛡 - <b>{enemy_pokemon.defense}</b>'
+    return text
 
 
 def take_pokemon(pokemon, id):
@@ -269,3 +232,11 @@ def get_text_for_icons(point, text: str):
     for i, line in enumerate(new_text[1:point], 1):
         new_text[i] = f'<s>{line}</s>'
     return '\n'.join(new_text)
+
+
+def access_to_pokemon_league(user_id):
+    with sqlite3.connect('Pokemon.db') as base:
+        cur = base.cursor()
+        if len(cur.execute(f'SELECT pokemons FROM Users WHERE id = {user_id}').fetchone()[0].split()) < 7:
+            return False
+        return True
