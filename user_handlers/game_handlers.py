@@ -7,8 +7,9 @@ from aiogram.types import CallbackQuery
 
 from FSM import FSMPokemon
 from keyboard.keyboards import create_inline_kb
-from services.services import get_description, get_characteristic_for_fight, get_fight, evolution_pokemon, \
-    start_fortune, buy_in_shop
+from services.classes import User
+from services.services import get_description, evolution_pokemon, start_fortune, buy_in_shop, \
+    get_pokemons_for_first_select
 from lexicon.lexicon import LEXICON
 
 base = sqlite3.connect('Pokemon.db')
@@ -20,44 +21,31 @@ base.close()
 async def start_game(callback: CallbackQuery):
     await callback.answer()
     await FSMPokemon.game.set()
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        if cur.execute('SELECT * FROM Users WHERE id = {}'.format(callback.from_user.id)).fetchone() is None:
-            cur.execute(
-                f"INSERT INTO Users (id, user_name) VALUES ({callback.from_user.id}, '{callback.from_user.first_name} "
-                f"{callback.from_user.last_name}')")
-            base.commit()
-            await callback.message.edit_text(f'{LEXICON["start_new_game"]}',
-                                             reply_markup=create_inline_kb(1, 'Выбор покемонов'))
-
-        elif cur.execute('SELECT pokemons FROM Users WHERE id = {}'.format(callback.from_user.id)).fetchone()[
-            0] is None or \
-                len(cur.execute('SELECT pokemons FROM Users WHERE id = {}'.format(callback.from_user.id)).fetchone()[
-                        0].split()) < 3:
-            await callback.message.edit_text(f'{LEXICON["start_new_game"]}',
-                                             reply_markup=create_inline_kb(1, 'Выбор покемонов'))
-        else:
-            await callback.message.answer(f'{LEXICON["start_game"]}', reply_markup=create_inline_kb(2,
-                                                                                                    'Охота на Покемонов 🎯',
-                                                                                                    'Лига Покемонов 🏆',
-                                                                                                    'Мои покемоны',
-                                                                                                    'Рюкзак 🎒',
-                                                                                                    'Магазин 🛍',
-                                                                                                    'Колесо Фортуны 🎰',
-                                                                                                    'Выход из игры ❌'))
+    user = User(callback.from_user.id)
+    if not user.check_user():
+        user.add_user_in_db(callback.from_user.first_name, callback.from_user.last_name)
+        await callback.message.edit_text(f'{LEXICON["start_new_game"]}',
+                                         reply_markup=create_inline_kb(1, 'Выбор покемонов'))
+    elif not user.check_count_pokemons():
+        await callback.message.edit_text(f'{LEXICON["start_new_game"]}',
+                                         reply_markup=create_inline_kb(1, 'Выбор покемонов'))
+    else:
+        await callback.message.answer(f'{LEXICON["start_game"]}', reply_markup=create_inline_kb(2,
+                                                                                                'Охота на Покемонов 🎯',
+                                                                                                'Лига Покемонов 🏆',
+                                                                                                'Мои покемоны',
+                                                                                                'Рюкзак 🎒',
+                                                                                                'Магазин 🛍',
+                                                                                                'Колесо Фортуны 🎰',
+                                                                                                'Выход из игры ❌'))
 
 
 async def start_first_select(callback: CallbackQuery, state: FSMContext):
     await FSMPokemon.first_select.set()
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        s = [i[0] for i in cur.execute(f'SELECT Name FROM Pokemons WHERE Level = 1 AND Type <> "Психический 😵‍💫"'
-                                       f'AND Type <> "Призрак 👻"').fetchall()]
-        pokemons = random.sample(s, k=10)
-        async with state.proxy() as data:
-            data['first_select'] = set(pokemons)
+    async with state.proxy() as data:
+        data['first_select'] = get_pokemons_for_first_select()
     await callback.message.edit_text('Сделай свой выбор!',
-                                     reply_markup=create_inline_kb(2, *pokemons))
+                                     reply_markup=create_inline_kb(2, *data['first_select']))
 
 
 async def first_select(callback: CallbackQuery, state: FSMContext):

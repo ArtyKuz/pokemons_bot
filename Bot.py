@@ -1,5 +1,6 @@
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import Message
+from aiogram.contrib.fsm_storage.redis import RedisStorage2
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
@@ -14,7 +15,7 @@ from config import Config, load_config
 config: Config = load_config()
 
 storage: MemoryStorage = MemoryStorage()
-
+# storage: RedisStorage2 = RedisStorage2(db=6)
 # Создаем объекты бота и диспетчера
 bot: Bot = Bot(token=config.token, parse_mode='HTML')
 dp: Dispatcher = Dispatcher(bot, storage=storage)

@@ -8,8 +8,8 @@ from aiogram.types import CallbackQuery
 from FSM import FSMPokemon
 from keyboard.keyboards import create_inline_kb
 from services.classes import Pokemon
-from services.services import get_description, get_pokemon_for_hunting, get_characteristic_for_fight, get_fight, \
-    take_pokemon, access_to_hunting, enhance_pokemon, get_text_for_fight
+from services.services import get_description, get_pokemon_for_hunting, get_fight, take_pokemon, access_to_hunting, \
+    get_text_for_fight
 from lexicon.lexicon import LEXICON
 
 base = sqlite3.connect('Pokemon.db')
@@ -81,6 +81,7 @@ async def start_fight(callback: CallbackQuery, state: FSMContext):
 
 async def fight(callback: CallbackQuery, state: FSMContext):
     async with state.proxy() as data:
+        print(data)
         user_pokemon: Pokemon = data['user_pokemon']
         enemy_pokemon: Pokemon = data['enemy_pokemon']
         if 'Усилить покемона' in callback.data:

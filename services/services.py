@@ -4,6 +4,15 @@ import sqlite3
 from services.classes import Pokemon
 
 
+def get_pokemons_for_first_select():
+    with sqlite3.connect('Pokemon.db') as base:
+        cur = base.cursor()
+        data = [i[0] for i in cur.execute(f'SELECT Name FROM Pokemons WHERE Level = 1 AND Type <> "Психический 😵‍💫"'
+                                       f'AND Type <> "Призрак 👻"').fetchall()]
+        pokemons = random.sample(data, k=10)
+        return set(pokemons)
+
+
 def get_description(pokemon_name, full=True):
     '''Функция для получения описания покемона.
     Атрибут full используется для получения полного или сокращенного описания'''
@@ -68,33 +77,6 @@ def get_pokemon_for_hunting():
     with sqlite3.connect('Pokemon.db') as base:
         cur = base.cursor()
         return random.choice([i[0] for i in cur.execute(f'SELECT name FROM Pokemons WHERE Level < 2').fetchall()])
-
-
-def get_characteristic_for_fight(pokemon, pokemon1, id):
-    '''Функция создает два словаря с характеристиками покемонов для сражения'''
-
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        pok = {}
-        pok1 = {}
-        s = [i for i in cur.execute(f'SELECT Type, HP, Атака, Защита, Преимущество FROM Pokemons WHERE Name = '
-                                    f'"{pokemon}"').fetchall()[0]]
-        pok['Name'] = pokemon
-        pok['Type'] = s[0]
-        pok['HP'] = s[1]
-        pok['Атака'] = s[2]
-        pok['Защита'] = s[3]
-        pok['Преимущество'] = s[4].split(',')
-        s = [i for i in cur.execute(f'SELECT Type, HP, Атака, Защита, Преимущество FROM Pokemons WHERE Name = '
-                                    f'"{pokemon1}"').fetchall()[0]]
-        pok1['Name'] = pokemon1
-        pok1['Type'] = s[0]
-        pok1['HP'] = s[1]
-        pok1['Атака'] = s[2]
-        pok1['Защита'] = s[3]
-        pok1['Преимущество'] = s[4].split(',')
-        eat = cur.execute(f'SELECT eat FROM Users WHERE id = {id}').fetchone()[0]
-        return pok, pok1, eat
 
 
 def get_fight(pokemon1: Pokemon, pokemon2: Pokemon):
