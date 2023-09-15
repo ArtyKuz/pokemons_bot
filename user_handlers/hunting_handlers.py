@@ -7,8 +7,8 @@ from aiogram.dispatcher.filters import Text
 from aiogram.types import CallbackQuery
 from FSM import FSMPokemon
 from keyboard.keyboards import create_inline_kb
-from services.classes import Pokemon
-from services.services import get_description, get_pokemon_for_hunting, get_fight, take_pokemon, access_to_hunting, \
+from services.classes import Pokemon, User
+from services.services import get_description, get_pokemon_for_hunting, get_fight, access_to_hunting, \
     get_text_for_fight
 from lexicon.lexicon import LEXICON
 
@@ -64,8 +64,6 @@ async def start_fight(callback: CallbackQuery, state: FSMContext):
         enemy_pokemon = Pokemon(data['pokemon'])
         data['user_pokemon'] = user_pokemon
         data['enemy_pokemon'] = enemy_pokemon
-        # data['pokemon'], data['my_pokemon'], data['eat'] = get_characteristic_for_fight(data['pokemon'], callback.data,
-        #                                                                                 callback.from_user.id)
         with sqlite3.connect('Pokemon.db') as base:
             cur = base.cursor()
             data['eat'] = cur.execute(f'SELECT eat FROM Users WHERE id = {callback.from_user.id}').fetchone()[0]
@@ -81,7 +79,6 @@ async def start_fight(callback: CallbackQuery, state: FSMContext):
 
 async def fight(callback: CallbackQuery, state: FSMContext):
     async with state.proxy() as data:
-        print(data)
         user_pokemon: Pokemon = data['user_pokemon']
         enemy_pokemon: Pokemon = data['enemy_pokemon']
         if 'Усилить покемона' in callback.data:
@@ -134,7 +131,9 @@ async def fight(callback: CallbackQuery, state: FSMContext):
 
 async def handler_take_pokemon(callback: CallbackQuery, state: FSMContext):
     async with state.proxy() as data:
-        if take_pokemon(data['enemy_pokemon'].name, callback.from_user.id):
+        user = User(callback.from_user.id)
+        if user.count_pokemons() < 10:
+            user.add_pokemon(data['enemy_pokemon'].name)
             await callback.message.edit_text(f'Поздравляю! Теперь {data["enemy_pokemon"].name} ваш покемон!',
                                              reply_markup=create_inline_kb(1, 'Продолжить охоту', 'Вернуться в '
                                                                                                   'главное меню'))
@@ -147,24 +146,17 @@ async def handler_take_pokemon(callback: CallbackQuery, state: FSMContext):
 
 async def select_replace_pokemon(callback: CallbackQuery, state: FSMContext):
     await FSMPokemon.replace_pokemon.set()
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        s = cur.execute(f'SELECT pokemons FROM Users WHERE id = {callback.from_user.id}').fetchone()[0].split()
-        await callback.message.edit_text('Выберите покемона которого хотите заменить.',
-                                         reply_markup=create_inline_kb(2, *s))
+    user_pokemons = User(callback.from_user.id).get_pokemons()
+    await callback.message.edit_text('Выберите покемона которого хотите заменить.',
+                                     reply_markup=create_inline_kb(2, *user_pokemons))
 
 
 async def replace_pokemon(callback: CallbackQuery, state: FSMContext):
     async with state.proxy() as data:
-        with sqlite3.connect('Pokemon.db') as base:
-            cur = base.cursor()
-            ls_pok = cur.execute('SELECT pokemons FROM Users WHERE id = {}'.format(callback.from_user.id)).fetchone()[0]
-            ls_pok = ls_pok.replace(callback.data, data["pokemon"]["Name"])
-            cur.execute("UPDATE Users SET pokemons = '{}' WHERE id = {}".format(ls_pok, callback.from_user.id))
-            base.commit()
-            await callback.message.edit_text(f'Теперь {data["pokemon"]["Name"]} в списке ваших покемонов.',
-                                             reply_markup=create_inline_kb(1, 'Продолжить охоту', 'Вернуться в '
-                                                                                                  'главное меню'))
+        User(callback.from_user.id).replace_pokemon(callback.data, data["enemy_pokemon"].name)
+        await callback.message.edit_text(f'Теперь {data["enemy_pokemon"].name} в списке ваших покемонов.',
+                                         reply_markup=create_inline_kb(1, 'Продолжить охоту', 'Вернуться в главное '
+                                                                                              'меню'))
 
 
 def register_hunting_handlers(dp: Dispatcher):

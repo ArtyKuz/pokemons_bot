@@ -36,7 +36,7 @@ class User:
     def __init__(self, user_id):
         self.user_id = user_id
 
-    def check_user(self):
+    def check_user(self) -> bool:
         """Проверяет, есть ли пользователь в базе данных"""
 
         with sqlite3.connect('Pokemon.db') as base:
@@ -45,7 +45,7 @@ class User:
                 return False
             return True
 
-    def add_user_in_db(self, first_name, last_name):
+    def add_user_in_db(self, first_name: str, last_name: str) -> None:
         """Добавляет пользователя в базу данных"""
 
         with sqlite3.connect('Pokemon.db') as base:
@@ -53,15 +53,53 @@ class User:
             cur.execute(f"INSERT INTO Users (id, user_name) VALUES ({self.user_id}, '{first_name} {last_name}')")
             base.commit()
 
-    def check_count_pokemons(self):
-        """Проверяет количество покемонов у пользователя"""
+    def add_pokemon(self, pokemon: str) -> None:
+        """Добавляет покемона пользователю"""
+
+        with sqlite3.connect('Pokemon.db') as base:
+            cur = base.cursor()
+            pokemons = self.get_pokemons()
+            if pokemons is None:
+                cur.execute(f"UPDATE Users SET pokemons = '{pokemon}' WHERE id = {self.user_id}")
+                base.commit()
+            else:
+                pokemons += f' {pokemon}'
+                cur.execute(f"UPDATE Users SET pokemons = '{pokemons}' WHERE id = {self.user_id}")
+                base.commit()
+
+    def count_pokemons(self) -> int:
+        """Возвращает кол-во покемонов, которые есть у пользователя"""
+
+        pokemons = self.get_pokemons()
+        return len(pokemons) if pokemons else 0
+
+    def get_pokemons(self) -> list:
+        """Возвращает список всех покемонов пользователя"""
 
         with sqlite3.connect('Pokemon.db') as base:
             cur = base.cursor()
             pokemons = cur.execute(f'SELECT pokemons FROM Users WHERE id = {self.user_id}').fetchone()[0]
-            if pokemons is None:
-                return False
-            elif len(pokemons.split()) < 3:
-                return False
+            if pokemons:
+                return pokemons.split()
 
-            return True
+    def get_backpack(self):
+        """Возвращает содержимое рюкзака"""
+
+        with sqlite3.connect('Pokemon.db') as base:
+            cur = base.cursor()
+            coins, eat, stone, icons = cur.execute(f'SELECT coins, eat, evolution_stone, icons FROM Users WHERE id = '
+                                                   f'{self.user_id}').fetchall()[0]
+            icons = [f'- {icon}' for icon in icons.split(',')]
+            icons = '\n'.join(icons)
+            return coins, eat, stone, icons
+
+    def replace_pokemon(self, user_pokemon: str, new_pokemon: str) -> None:
+        """Заменяет одного покемона на другого в списке покемонов пользователя"""
+
+        with sqlite3.connect('Pokemon.db') as base:
+            cur = base.cursor()
+            pokemons = self.get_pokemons()
+            index = pokemons.index(user_pokemon)
+            pokemons[index] = new_pokemon
+            cur.execute(f"UPDATE Users SET pokemons = '{' '.join(pokemons)}' WHERE id = {self.user_id}")
+            base.commit()

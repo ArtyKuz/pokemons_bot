@@ -9,7 +9,7 @@ from FSM import FSMPokemon
 from keyboard.keyboards import create_inline_kb
 from lexicon.lexicon import LEXICON
 from services.classes import Pokemon
-from services.services import get_description, get_characteristic_for_fight, get_fight, update_icons, \
+from services.services import get_description, get_fight, update_icons, \
     get_text_for_icons, get_text_for_fight, access_to_pokemon_league
 
 base = sqlite3.connect('Pokemon.db')

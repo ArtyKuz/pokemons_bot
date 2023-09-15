@@ -122,19 +122,19 @@ def get_text_for_fight(user_pokemon: Pokemon, enemy_pokemon: Pokemon, dice=None,
     return text
 
 
-def take_pokemon(pokemon, id):
-    """Функция принимает Покемона и если у игрока меньше 10 покемонов
-    добавляет покемона игроку, иначе возвращает False"""
-
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        s: list = cur.execute(f'SELECT pokemons FROM Users WHERE id = {id}').fetchone()[0].split()
-        if len(s) < 10:
-            s.append(pokemon)
-            cur.execute("UPDATE Users SET pokemons = '{}' WHERE id = {}".format(' '.join(s), id))
-            base.commit()
-            return True
-        return False
+# def take_pokemon(pokemon, id):
+#     """Функция принимает Покемона и если у игрока меньше 10 покемонов
+#     добавляет покемона игроку, иначе возвращает False"""
+#
+#     with sqlite3.connect('Pokemon.db') as base:
+#         cur = base.cursor()
+#         s: list = cur.execute(f'SELECT pokemons FROM Users WHERE id = {id}').fetchone()[0].split()
+#         if len(s) < 10:
+#             s.append(pokemon)
+#             cur.execute("UPDATE Users SET pokemons = '{}' WHERE id = {}".format(' '.join(s), id))
+#             base.commit()
+#             return True
+#         return False
 
 
 def evolution_pokemon(pokemon, id):
@@ -201,7 +201,7 @@ def update_icons(id, icon):
         cur = base.cursor()
         icons = cur.execute(f'SELECT icons FROM Users WHERE id = {id}').fetchone()[0]
         if icons:
-            icons += f', {icon}'
+            icons += f',{icon}'
             cur.execute(f'UPDATE Users SET icons = "{icons}", point = point+1 WHERE id = {id}')
             base.commit()
         else:

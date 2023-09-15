@@ -26,7 +26,7 @@ async def start_game(callback: CallbackQuery):
         user.add_user_in_db(callback.from_user.first_name, callback.from_user.last_name)
         await callback.message.edit_text(f'{LEXICON["start_new_game"]}',
                                          reply_markup=create_inline_kb(1, 'Выбор покемонов'))
-    elif not user.check_count_pokemons():
+    elif user.count_pokemons() < 3:
         await callback.message.edit_text(f'{LEXICON["start_new_game"]}',
                                          reply_markup=create_inline_kb(1, 'Выбор покемонов'))
     else:
@@ -50,41 +50,26 @@ async def start_first_select(callback: CallbackQuery, state: FSMContext):
 
 async def first_select(callback: CallbackQuery, state: FSMContext):
     await callback.answer(f'Поздравляю! Теперь {callback.data} ваш покемон!', show_alert=True)
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        ls_pok = cur.execute('SELECT pokemons FROM Users WHERE id = {}'.format(callback.from_user.id)).fetchone()[0]
-        if ls_pok == None:
-            cur.execute(
-                "UPDATE Users SET pokemons = '{}' WHERE id = {}".format(callback.data, callback.from_user.id))
-            base.commit()
-            async with state.proxy() as data:
-                data['first_select'] = data['first_select'] - {callback.data}
-                await callback.message.edit_text('Выбирайте дальше!',
-                                                 reply_markup=create_inline_kb(2, *data['first_select']))
+    async with state.proxy() as data:
+        user = User(callback.from_user.id)
+        user.add_pokemon(callback.data)
+        if user.count_pokemons() < 3:
+            data['first_select'] = data['first_select'] - {callback.data}
+            await callback.message.edit_text('Выбирайте дальше!',
+                                             reply_markup=create_inline_kb(2, *data['first_select']))
         else:
-            ls_pok += f' {callback.data}'
-            cur.execute("UPDATE Users SET pokemons = '{}' WHERE id = {}".format(ls_pok, callback.from_user.id))
-            base.commit()
-            if len(ls_pok.split()) == 3:
-                keyboard = create_inline_kb(1, 'Мои покемоны', 'Начать игру')
-                await callback.message.edit_text('Поздравляю! Вы выбрали 3 покемонов, теперь вы можете '
-                                                 'посмотреть ваших покемонов либо начать игру', reply_markup=keyboard)
-                await FSMPokemon.game.set()
-            else:
-                async with state.proxy() as data:
-                    data['first_select'] = data['first_select'] - {callback.data}
-                    keyboard = create_inline_kb(2, *data['first_select'])
-                    await callback.message.edit_text('Выбирайте дальше!', reply_markup=keyboard)
+            keyboard = create_inline_kb(1, 'Мои покемоны', 'Начать игру')
+            await callback.message.edit_text('Поздравляю! Вы выбрали 3 покемонов, теперь вы можете '
+                                             'посмотреть ваших покемонов либо начать игру', reply_markup=keyboard)
+            await FSMPokemon.game.set()
 
 
 # Просмотр списка личных покемонов
 async def watch_person_pokemons(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        user_pokemons = cur.execute(f'SELECT pokemons FROM Users WHERE id = {callback.from_user.id}').fetchone()[0].split()
-        await callback.message.answer('Ваши покемоны!', reply_markup=create_inline_kb(2, *user_pokemons,
-                                                                                      'Продолжить игру 🔄'))
+    user_pokemons = User(callback.from_user.id).get_pokemons()
+    await callback.message.answer('Ваши покемоны!', reply_markup=create_inline_kb(2, *user_pokemons,
+                                                                                  'Продолжить игру 🔄'))
 
 
 # Просмотр информации о личном покемоне
@@ -156,15 +141,12 @@ async def spin_wheel_fortune(callback: CallbackQuery, state: FSMContext):
 
 async def backpack(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        coins, eat, stone, icons = cur.execute(f'SELECT coins, eat, evolution_stone, icons FROM Users WHERE id = '
-                                        f'{callback.from_user.id}').fetchall()[0]
-        await callback.message.answer(f'В данный момент у вас имеется:\n'
-                                      f'🔹 монет - <b>{coins}</b> 💰\n🔹 порции еды - <b>{eat}</b> 🍔\n'
-                                      f'🔹 Камней эволюции - <b>{stone}</b> 💎\n'
-                                      f'🔹 Значки:\n{icons}',
-                                      reply_markup=create_inline_kb(1, 'Вернуться в главное меню'))
+    coins, eat, stone, icons = User(callback.from_user.id).get_backpack()
+    await callback.message.answer(f'В данный момент у вас имеется:\n'
+                                  f'🔹 монет - <b>{coins}</b> 💰\n🔹 порции еды - <b>{eat}</b> 🍔\n'
+                                  f'🔹 Камней эволюции - <b>{stone}</b> 💎\n'
+                                  f'🔹 Значки:\n{icons}',
+                                  reply_markup=create_inline_kb(1, 'Вернуться в главное меню'))
 
 
 async def shop_menu(callback: CallbackQuery, state: FSMContext):
