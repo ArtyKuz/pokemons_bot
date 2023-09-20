@@ -1,28 +1,33 @@
+import asyncio
+
+import asyncpg
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import Message
 from aiogram.contrib.fsm_storage.redis import RedisStorage2
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
+
+from middlewares.middlewares import DBMiddleware
 from user_handlers.pokedeks_handlers import register_pokedeks_handlers
 from user_handlers.menu_handlers import register_menu_handlers
 from user_handlers.game_handlers import register_game_handlers
 from user_handlers.hunting_handlers import register_hunting_handlers
 from user_handlers.pokemon_league_handlers import register_pokemon_league_handlers
-from config import Config, load_config
+from config import TokenConfig, DBConfig, load_db_config, load_token_config
+from services.services import scheduler
 
 
-config: Config = load_config()
+token_config: TokenConfig = load_token_config()
+db_config: DBConfig = load_db_config()
 
 storage: MemoryStorage = MemoryStorage()
 # storage: RedisStorage2 = RedisStorage2(db=6)
+
 # Создаем объекты бота и диспетчера
-bot: Bot = Bot(token=config.token, parse_mode='HTML')
+bot: Bot = Bot(token=token_config.token, parse_mode='HTML')
 dp: Dispatcher = Dispatcher(bot, storage=storage)
 
 
-async def set_main_menu(dp: Dispatcher):
-    """Функция для создания списка с командами для кнопки menu"""
+async def main():
 
     main_menu_commands = [
         types.BotCommand(command='/start', description='Запустить бота'),
@@ -31,13 +36,30 @@ async def set_main_menu(dp: Dispatcher):
     ]
     await dp.bot.set_my_commands(main_menu_commands)
 
+    pool = await asyncpg.create_pool(database=db_config.database,
+                                     user=db_config.user,
+                                     password=db_config.password,
+                                     host=db_config.host,
+                                     port=db_config.port)
+    db_middleware = DBMiddleware(pool)
 
-register_menu_handlers(dp)
-register_pokedeks_handlers(dp)
-register_game_handlers(dp)
-register_hunting_handlers(dp)
-register_pokemon_league_handlers(dp)
+    # Добавляем мидлвари в диспетчер
+    dp.middleware.setup(db_middleware)
+    asyncio.create_task(scheduler(pool))
+
+    async with pool.acquire() as conn:
+        types_pok = [i['name_type'] for i in await conn.fetch('SELECT name_type FROM types_pokemons')]
+        names_pokemons = [i['pokemon_name'] for i in await conn.fetch('SELECT pokemon_name FROM pokemons')]
+    register_menu_handlers(dp)
+    register_pokedeks_handlers(dp, types_pok, names_pokemons)
+    register_game_handlers(dp, names_pokemons)
+    register_hunting_handlers(dp, names_pokemons)
+    register_pokemon_league_handlers(dp, names_pokemons)
+    await dp.start_polling()
 
 
 if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True, on_startup=set_main_menu)
+    asyncio.run(main())
+    # loop = asyncio.get_event_loop()
+    # loop.run_until_complete(create_pool())
+    # executor.start_polling(dp, skip_updates=True, on_startup=set_main_menu)

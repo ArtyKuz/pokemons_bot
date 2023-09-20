@@ -1,86 +1,132 @@
+import asyncio
 import random
 import sqlite3
+from io import BytesIO
+
+import aioschedule
+import asyncpg
+from aiogram.types import InputFile
 
 from services.classes import Pokemon
 
 
-def get_pokemons_for_first_select():
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        data = [i[0] for i in cur.execute(f'SELECT Name FROM Pokemons WHERE Level = 1 AND Type <> "Психический 😵‍💫"'
-                                       f'AND Type <> "Призрак 👻"').fetchall()]
-        pokemons = random.sample(data, k=10)
-        return set(pokemons)
+async def get_pokemons_for_first_select(conn: asyncpg.connection.Connection) -> set:
+    """Выбирает 10 случайных покемонов 1 уровня для выбора в начале игры."""
+
+    pokemons = await conn.fetch(f'SELECT pokemon_name FROM pokemons '
+                                f'WHERE level = 1 AND type_pokemon != 8 AND type_pokemon != 9')
+    data = [i['pokemon_name'] for i in pokemons]
+    pokemons = random.sample(data, k=10)
+    return set(pokemons)
 
 
-def get_description(pokemon_name, full=True):
-    '''Функция для получения описания покемона.
-    Атрибут full используется для получения полного или сокращенного описания'''
+async def get_description(pokemon_name, conn: asyncpg.connection.Connection, full=True, user_id=None):
+    """Функция для получения описания покемона.
+    Атрибут full используется для получения полного или сокращенного описания."""
 
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        s = cur.execute(f'SELECT * FROM Pokemons WHERE Name = "{pokemon_name}"').fetchall()[0]
-        if full:
-            return s[8], f'<b>{s[9]}</b>\n\n<b>Характеристики:</b>\nЗдоровье 💊 - {s[3]}\nАтака ⚔ - {s[4]}\n' \
-                         f'Защита 🛡 - {s[5]}\n\n<b>Имеет преимущества над типами:</b>\n{s[6]}'
-        else:
-            return s[8], f'<b>{pokemon_name}\n\n</b><b>Характеристики:</b>\nЗдоровье 💊 - {s[3]}\nАтака ⚔ - {s[4]}\n' \
-                         f'Защита 🛡 - {s[5]}\n\n<b>Имеет преимущества над типами:</b>\n{s[6]}'
+    pokemon = await conn.fetchrow(
+        "SELECT pokemon_id, pokemon_name, name_type, type_pokemon, hp, attack, defense, image, description "
+        'FROM pokemons JOIN types_pokemons ON pokemons.type_pokemon = types_pokemons.type_id '
+        'WHERE pokemon_name = $1', pokemon_name)
+    types = await conn.fetch("SELECT name_type FROM types_pokemons "
+                             "WHERE type_id IN "
+                             "(SELECT superiority_type FROM superiority "
+                             "WHERE type_id = $1)", pokemon['type_pokemon'])
+    superiority = ', '.join([i['name_type'] for i in types])
+    image = InputFile(BytesIO(pokemon['image']))
+    if full:
+        return image, f'<b>{pokemon["description"]}</b>\n\n<b>Характеристики:</b>\nЗдоровье 💊 - {pokemon["hp"]}\n' \
+                      f'Атака ⚔ - {pokemon["attack"]}\nЗащита 🛡 - {pokemon["defense"]}\n\n' \
+                      f'<b>Имеет преимущества над типами:</b>\n{superiority}'
+    elif not full and not user_id:
+        return image, f'<b>{pokemon_name}</b>\nТип - {pokemon["name_type"]}\n\n<b>Характеристики:</b>\n' \
+                      f'Здоровье 💊 - {pokemon["hp"]}\n' \
+                      f'Атака ⚔ - {pokemon["attack"]}\n' \
+                      f'Защита 🛡 - {pokemon["defense"]}\n\n' \
+                      f'<b>Имеет преимущества над типами:</b>\n{superiority}'
+    else:
+        energy = await conn.fetchval('SELECT energy FROM users_pokemons WHERE user_id = $1 AND pokemon_id = $2',
+                                     user_id, pokemon["pokemon_id"])
+        return image, f'<b>{pokemon_name}</b>\nТип - {pokemon["name_type"]}\n\n<b>Характеристики:</b>\n' \
+                      f'Здоровье 💊 - {pokemon["hp"]}\n' \
+                      f'Атака ⚔ - {pokemon["attack"]}\n' \
+                      f'Защита 🛡 - {pokemon["defense"]}\n\n' \
+                      f'Энергия ⚡ - {energy}\n\n' \
+                      f'<b>Имеет преимущества над типами:</b>\n{superiority}'
 
 
-def get_best_pokemons(best: str) -> str:
+async def create_pokemon_for_fight(user_pokemon, enemy_pokemon, conn: asyncpg.connection.Connection):
+    description, superiority = await get_data(user_pokemon, conn)
+    user_pokemon = Pokemon(description, superiority)
+    description, superiority = await get_data(enemy_pokemon, conn)
+    enemy_pokemon = Pokemon(description, superiority)
+
+    return user_pokemon, enemy_pokemon
+
+
+async def get_data(name_pokemon, conn: asyncpg.connection.Connection):
+    description = await conn.fetchrow(
+        "SELECT pokemon_id, pokemon_name, name_type, type_pokemon, hp, attack, defense "
+        'FROM pokemons JOIN types_pokemons ON pokemons.type_pokemon = '
+        'types_pokemons.type_id '
+        'WHERE pokemon_name = $1', name_pokemon)
+    superiority = await conn.fetch("SELECT name_type FROM types_pokemons "
+                                   "WHERE type_id IN "
+                                   "(SELECT superiority_type FROM superiority "
+                                   "WHERE type_id = $1)", description['type_pokemon'])
+    return description, superiority
+
+
+async def get_best_pokemons(best: str, conn: asyncpg.connection.Connection) -> str:
     '''Функция возвращает строку с содержанием 10-ти лучших покемонов'''
 
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        best_pokemons: str = f'{best}:\n\n'
-        if best == 'Лучшие покемоны по сумме хар-к':
-            s = cur.execute(
-                f'SELECT Name, HP+Атака+Защита FROM Pokemons ORDER BY HP+Атака+Защита DESC LIMIT 10').fetchall()
-            for ind, pokemon in enumerate(s, 1):
-                best_pokemons += f'{ind}. {pokemon[0]} - {pokemon[1]}\n'
+    best_pokemons: str = f'{best}:\n\n'
+    if best == 'Лучшие покемоны по сумме хар-к':
+        s = await conn.fetch(
+            f'SELECT pokemon_name, (hp+attack+defense) as power FROM pokemons ORDER BY power DESC LIMIT 10')
+        for ind, pokemon in enumerate(s, 1):
+            best_pokemons += f'{ind}. {pokemon["pokemon_name"]} - {pokemon["power"]}\n'
 
-        elif best == 'Лучшие покемоны по Здоровью':
-            s = cur.execute(
-                f'SELECT Name, HP FROM Pokemons ORDER BY HP DESC LIMIT 10').fetchall()
-            for ind, pokemon in enumerate(s, 1):
-                best_pokemons += f'{ind}. {pokemon[0]} - {pokemon[1]}\n'
+    elif best == 'Лучшие покемоны по Здоровью':
+        s = await conn.fetch(
+            f'SELECT pokemon_name, hp FROM Pokemons ORDER BY hp DESC LIMIT 10')
+        for ind, pokemon in enumerate(s, 1):
+            best_pokemons += f'{ind}. {pokemon["pokemon_name"]} - {pokemon["hp"]}\n'
 
-        elif best == 'Лучшие покемоны по Атаке':
-            s = cur.execute(
-                f'SELECT Name, Атака FROM Pokemons ORDER BY Атака DESC LIMIT 10').fetchall()
-            for ind, pokemon in enumerate(s, 1):
-                best_pokemons += f'{ind}. {pokemon[0]} - {pokemon[1]}\n'
+    elif best == 'Лучшие покемоны по Атаке':
+        s = await conn.fetch(
+            f'SELECT pokemon_name, attack FROM pokemons ORDER BY attack DESC LIMIT 10')
+        for ind, pokemon in enumerate(s, 1):
+            best_pokemons += f'{ind}. {pokemon["pokemon_name"]} - {pokemon["attack"]}\n'
 
-        elif best == 'Лучшие покемоны по Защите':
-            s = cur.execute(
-                f'SELECT Name, Защита FROM Pokemons ORDER BY Защита DESC LIMIT 10').fetchall()
-            for ind, pokemon in enumerate(s, 1):
-                best_pokemons += f'{ind}. {pokemon[0]} - {pokemon[1]}\n'
+    elif best == 'Лучшие покемоны по Защите':
+        s = await conn.fetch(
+            f'SELECT pokemon_name, defense FROM pokemons ORDER BY defense DESC LIMIT 10')
+        for ind, pokemon in enumerate(s, 1):
+            best_pokemons += f'{ind}. {pokemon["pokemon_name"]} - {pokemon["defense"]}\n'
 
-        return best_pokemons
+    return best_pokemons
 
 
-def access_to_hunting(id):
-    '''Функция проверяет кол-во оставшихся попыток для игры в режиме Охоты на Покемонов'''
+async def access_to_hunting(user_id, conn: asyncpg.connection.Connection):
+    """Функция проверяет кол-во оставшихся попыток для игры в режиме Охоты на Покемонов"""
 
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        if cur.execute(f'SELECT hunting_attempts FROM Users WHERE id = {id}').fetchone()[0] > 0:
-            return True
-        return False
+    if await conn.fetchval(f'SELECT hunting_attempts FROM users WHERE user_id = $1', user_id):
+        return True
+    return False
 
 
-def get_pokemon_for_hunting():
-    '''Функция выбирает рандомного покемона 0 или 1 уровня, для режима Охоты на Покемонов'''
+async def get_pokemon_for_hunting(user_id, conn: asyncpg.connection.Connection):
+    """Функция выбирает рандомного покемона 0 или 1 уровня, для режима Охоты на Покемонов"""
 
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        return random.choice([i[0] for i in cur.execute(f'SELECT name FROM Pokemons WHERE Level < 2').fetchall()])
+    return random.choice([i['pokemon_name'] for i in await conn.fetch(f'SELECT pokemon_name FROM pokemons '
+                                                                      f'WHERE level < 2 AND pokemon_id NOT IN '
+                                                                      f'(SELECT pokemon_id FROM users_pokemons '
+                                                                      f'WHERE user_id = $1)', user_id)])
 
 
 def get_fight(pokemon1: Pokemon, pokemon2: Pokemon):
-    '''Функция для расчета характеристик во время боя покемонов'''
+    """Функция для расчета характеристик во время боя покемонов"""
 
     dice_attack = random.randrange(1, 7)
     dice_defense = random.randrange(1, 7)
@@ -122,78 +168,70 @@ def get_text_for_fight(user_pokemon: Pokemon, enemy_pokemon: Pokemon, dice=None,
     return text
 
 
-# def take_pokemon(pokemon, id):
-#     """Функция принимает Покемона и если у игрока меньше 10 покемонов
-#     добавляет покемона игроку, иначе возвращает False"""
-#
-#     with sqlite3.connect('Pokemon.db') as base:
-#         cur = base.cursor()
-#         s: list = cur.execute(f'SELECT pokemons FROM Users WHERE id = {id}').fetchone()[0].split()
-#         if len(s) < 10:
-#             s.append(pokemon)
-#             cur.execute("UPDATE Users SET pokemons = '{}' WHERE id = {}".format(' '.join(s), id))
-#             base.commit()
-#             return True
-#         return False
+async def evolution_pokemon(pokemon, user_id, conn: asyncpg.connection.Connection):
+    level = await conn.fetchval(f'SELECT level FROM pokemons WHERE pokemon_name = $1', pokemon)
+    if level == 0:
+        return level
+    max_level = await conn.fetch('SELECT max(level) FROM pokemons WHERE evolution_group IN (SELECT evolution_group '
+                                 'FROM pokemons WHERE pokemon_name = $1)', pokemon)
+    if level == max_level:
+        return 'max'
+    stone = await conn.fetchval(f'SELECT evolution_stone FROM users WHERE user_id = $1', user_id)
+    if stone > 0:
+        level += 1
+        if pokemon == 'Иви':
+            new_pokemon = random.choice(
+                [i['pokemon_name'] for i in await conn.fetch(f'SELECT pokemon_name FROM pokemons '
+                                                             f'WHERE evolution_group IN '
+                                                             f'(SELECT evolution_group FROM pokemons '
+                                                             f'WHERE pokemon_name = $1) '
+                                                             f'AND level = $2', pokemon, level)])
+        else:
+            new_pokemon = await conn.fetchval(f'SELECT pokemon_name FROM pokemons '
+                                              f'WHERE evolution_group IN '
+                                              f'(SELECT evolution_group FROM pokemons '
+                                              f'WHERE pokemon_name = $1) '
+                                              f'AND level = $2', pokemon, level)
+        new_pokemon_id = await conn.fetchval('SELECT pokemon_id FROM pokemons WHERE pokemon_name = $1', new_pokemon)
+        old_pokemon_id = await conn.fetchval('SELECT pokemon_id FROM pokemons WHERE pokemon_name = $1', pokemon)
+
+        await conn.execute('UPDATE users_pokemons SET pokemon_id = $1, energy = $2, wins = $3 '
+                           'WHERE user_id = $4 AND pokemon_id = $5', new_pokemon_id, 3, 0, user_id, old_pokemon_id)
+
+        await conn.execute("UPDATE users SET evolution_stone = evolution_stone - 1 "
+                           f"WHERE user_id = $1", user_id)
+        return new_pokemon
+    return False
 
 
-def evolution_pokemon(pokemon, id):
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        level = cur.execute(f'SELECT Level FROM Pokemons WHERE Name = "{pokemon}"').fetchone()[0]
-        if level == 0:
-            return level
-        p = [i[0] for i in cur.execute('SELECT Name FROM Pokemons GROUP BY Эволюция HAVING max(Level)').fetchall()]
-        if pokemon in p:
-            return 'max'
-        stone = cur.execute(f'SELECT evolution_stone FROM Users WHERE id = {id}').fetchone()[0]
-        if stone > 0:
-            if pokemon == 'Иви':
-                ev_pokemon = random.choice(cur.execute(f'SELECT Name FROM Pokemons WHERE Эволюция IN '
-                                     f'(SELECT Эволюция FROM Pokemons WHERE Name = "{pokemon}") '
-                                     f'AND Level = {level}+1').fetchall())[0]
-            else:
-                ev_pokemon = cur.execute(f'SELECT Name FROM Pokemons WHERE Эволюция IN '
-                                     f'(SELECT Эволюция FROM Pokemons WHERE Name = "{pokemon}") '
-                                     f'AND Level = {level}+1').fetchone()[0]
-            user_pok: str = cur.execute(f'SELECT pokemons FROM Users WHERE id = {id}').fetchone()[0]
-            user_pok = user_pok.replace(pokemon, ev_pokemon)
-            cur.execute(f"UPDATE Users SET pokemons = '{user_pok}', evolution_stone = evolution_stone - 1"
-                        f" WHERE id = {id}")
-            base.commit()
-            return ev_pokemon
-        return False
-
-
-def start_fortune(id):
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        attempts = cur.execute(f'SELECT wheel_of_Fortune FROM Users WHERE id = {id}').fetchone()[0]
-        if attempts:
-            wheel = ['eat', 10, 20, 50, 'evolution_stone']
-            select = random.sample(wheel, counts=[10, 10, 5, 3, 2], k=1)[0]
-            if select == 'eat':
-                cur.execute(f"UPDATE Users SET eat = eat + 1, wheel_of_Fortune = 0 WHERE id = {id}")
-            elif type(select) == int:
-                cur.execute(f"UPDATE Users SET coins = coins + {select}, wheel_of_Fortune = 0 WHERE id = {id}")
-            elif select == 'evolution_stone':
-                cur.execute(f"UPDATE Users SET evolution_stone = evolution_stone + 1, wheel_of_Fortune = 0"
-                            f" WHERE id = {id}")
-            base.commit()
+async def start_fortune(user_id, conn: asyncpg.connection.Connection):
+    attempts = await conn.fetchval('SELECT fortune_attempts FROM users WHERE user_id = $1', user_id)
+    if attempts:
+        wheel = ['eat', 10, 20, 50, 'evolution_stone']
+        select = random.sample(wheel, counts=[10, 10, 5, 3, 2], k=1)[0]
+        if select == 'eat':
+            await conn.execute("UPDATE users SET eat = eat + 1, fortune_attempts = 0 WHERE user_id = $1", user_id)
             return select
-        return False
+        elif type(select) == int:
+            await conn.execute("UPDATE users SET coins = coins + $1, fortune_attempts = 0 WHERE user_id = $2",
+                               select, user_id)
+            return select
+        elif select == 'evolution_stone':
+            await conn.execute("UPDATE users SET evolution_stone = evolution_stone + $1, fortune_attempts = 0"
+                               f" WHERE user_id = $2", select, user_id)
+            return select
+    return False
 
 
-def buy_in_shop(product, id):
-    prices = {'eat': 50, 'evolution_stone': 100}
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        coins = cur.execute(f'SELECT coins FROM Users WHERE id = {id}').fetchone()[0]
-        if coins >= prices[product]:
-            cur.execute(f"UPDATE Users SET {product} = {product}+1, coins = coins - {prices[product]} WHERE id = {id}")
-            base.commit()
-            return True
-        return False
+async def buy_in_shop(product, user_id, conn: asyncpg.connection.Connection):
+    menu = {'eat': 50, 'evolution_stone': 100}
+
+    coins = await conn.fetchval('SELECT coins FROM users WHERE user_id = $1', user_id)
+    if coins >= menu[product]:
+        query = f'UPDATE users SET {product} = {product} + 1, coins = coins - $1 WHERE user_id = $2'
+        await conn.execute(query, menu[product], user_id)
+        return True
+    return False
 
 
 def update_icons(id, icon):
@@ -222,3 +260,16 @@ def access_to_pokemon_league(user_id):
         if len(cur.execute(f'SELECT pokemons FROM Users WHERE id = {user_id}').fetchone()[0].split()) < 7:
             return False
         return True
+
+
+async def recovery_energy(pool):
+    async with pool.acquire() as conn:
+        await conn.execute('UPDATE users_pokemons SET energy = energy + 1 WHERE energy < 3')
+
+
+async def scheduler(pool):
+    aioschedule.every().hour.at(":00").do(recovery_energy, pool=pool)
+    aioschedule.every().day.at()
+    while True:
+        await aioschedule.run_pending()
+        await asyncio.sleep(1)

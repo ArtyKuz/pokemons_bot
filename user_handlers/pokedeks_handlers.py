@@ -1,51 +1,42 @@
-import sqlite3
-
+import asyncpg
 from aiogram import Dispatcher
 from aiogram.dispatcher import FSMContext
 from aiogram.types import CallbackQuery
 
 from FSM import FSMPokemon
 from keyboard.keyboards import create_inline_kb
-from services.services import get_description, get_best_pokemons
+from services.services import get_best_pokemons, get_description
 from lexicon.lexicon import LEXICON
-
-base = sqlite3.connect('Pokemon.db')
-cur = base.cursor()
-types_pok = [i[0] for i in cur.execute('SELECT Type FROM Pokemons').fetchall()]
-names_pokemons = [i[0] for i in cur.execute('SELECT Name FROM Pokemons').fetchall()]
-base.close()
 
 
 async def start_pokedeks(callback: CallbackQuery):
     await callback.answer()
     await callback.message.answer(f'{LEXICON["start_pokedeks"]}', reply_markup=create_inline_kb(1, 'Типы покемонов',
-                                                                                                   'Лучшие покемоны',
-                                                                                                   'Выход из ПОКЕДЕКСА ❌'))
+                                                                                                'Лучшие покемоны',
+                                                                                                'Выход из ПОКЕДЕКСА ❌'))
     await FSMPokemon.pokedeks.set()
 
 
-async def types_pokemons(callback: CallbackQuery):
+async def types_pokemons(callback: CallbackQuery, conn: asyncpg.connection.Connection):
     await callback.answer()
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        pokemon_types = sorted(i[0] for i in cur.execute('SELECT DISTINCT Type FROM Pokemons').fetchall())
-        await callback.message.answer('Выбирай тип покемона!',
-                                      reply_markup=create_inline_kb(2, *pokemon_types, 'Выход в меню Покедекса 📖'))
+    pokemon_types = sorted(i['name_type'] for i in await conn.fetch('SELECT name_type FROM types_pokemons'))
+    await callback.message.answer('Выбирай тип покемона!',
+                                  reply_markup=create_inline_kb(2, *pokemon_types, 'Выход в меню Покедекса 📖'))
 
 
-async def one_type_pokemons(callback: CallbackQuery, state: FSMContext):
+async def one_type_pokemons(callback: CallbackQuery, state: FSMContext, conn: asyncpg.connection.Connection):
     await callback.answer()
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        pokemons = [i[0] for i in cur.execute(f'SELECT Name FROM Pokemons WHERE Type LIKE '
-                                          f'"{callback.data}" ORDER BY Эволюция').fetchall()]
-        await callback.message.answer(f'К типу <b>{callback.data}</b> относятся следующие покемоны:',
-                                      reply_markup=create_inline_kb(2, *pokemons))
+    pokemons = [i['pokemon_name'] for i in await conn.fetch(f'SELECT pokemon_name FROM pokemons JOIN types_pokemons '
+                                                            f'ON pokemons.type_pokemon = types_pokemons.type_id '
+                                                            f'WHERE name_type = $1 ORDER BY evolution_group',
+                                                            callback.data)]
+    await callback.message.answer(f'К типу <b>{callback.data}</b> относятся следующие покемоны:',
+                                  reply_markup=create_inline_kb(2, *pokemons))
 
 
-async def description_pokemon(callback: CallbackQuery):
+async def description_pokemon(callback: CallbackQuery, conn: asyncpg.connection.Connection):
     await callback.answer()
-    image, description = get_description(callback.data)
+    image, description = await get_description(callback.data, conn)
     await callback.message.answer_photo(image, caption=description,
                                         reply_markup=create_inline_kb(1, 'Типы покемонов', 'Выход в меню Покедекса 📖'))
 
@@ -60,11 +51,11 @@ async def best_pokemons(callback: CallbackQuery):
                                                                    'Выход в меню Покедекса 📖'))
 
 
-async def show_best_pokemons(callback: CallbackQuery):
+async def show_best_pokemons(callback: CallbackQuery, conn: asyncpg.connection.Connection):
     await callback.answer()
-    best_pokemons = get_best_pokemons(callback.data)
+    best_pokemons = await get_best_pokemons(callback.data, conn)
     await callback.message.edit_text(f'{best_pokemons}', reply_markup=create_inline_kb(1, 'Лучшие покемоны',
-                                                                           'Выход в меню Покедекса 📖'))
+                                                                                       'Выход в меню Покедекса 📖'))
 
 
 async def exit_pokedeks(callback: CallbackQuery, state: FSMContext):
@@ -74,7 +65,7 @@ async def exit_pokedeks(callback: CallbackQuery, state: FSMContext):
     await state.finish()
 
 
-def register_pokedeks_handlers(dp: Dispatcher):
+def register_pokedeks_handlers(dp: Dispatcher, types_pok, names_pokemons):
     dp.register_callback_query_handler(start_pokedeks, text='ПОКЕДЕКС 📖')
     dp.register_callback_query_handler(start_pokedeks, text=['ПОКЕДЕКС 📖', 'Выход в меню Покедекса 📖'],
                                        state=FSMPokemon.pokedeks)
