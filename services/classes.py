@@ -1,9 +1,4 @@
-import sqlite3
-import random
-from io import BytesIO
-
 import asyncpg
-from aiogram.types import InputFile
 
 
 class Pokemon:
@@ -89,6 +84,14 @@ class User:
         if pokemons:
             return [i['pokemon_name'] for i in pokemons]
 
+    async def get_pokemons_for_fight(self, conn: asyncpg.connection.Connection):
+        """Возвращает список всех покемонов пользователя имеющих энергию больше 0"""
+
+        pokemons = await conn.fetch('SELECT pokemon_name FROM users_pokemons JOIN pokemons USING(pokemon_id) '
+                                    'WHERE user_id = $1 AND energy > 0', self.user_id)
+        if pokemons:
+            return [i['pokemon_name'] for i in pokemons]
+
     async def get_backpack(self, conn: asyncpg.connection.Connection):
         """Возвращает содержимое рюкзака"""
 
@@ -108,3 +111,11 @@ class User:
         new_pokemon_id = await conn.fetchval('SELECT pokemon_id FROM pokemons WHERE pokemon_name = $1', new_pokemon)
         await conn.execute('UPDATE users_pokemons SET pokemon_id = $1 WHERE user_id = $2 AND pokemon_id = $3',
                            new_pokemon_id, self.user_id, user_pokemon_id)
+
+    async def add_icon(self, point, conn: asyncpg.connection.Connection):
+        """Добавляет значок пользователю"""
+
+        await conn.execute('UPDATE users SET points = points + 1 WHERE user_id = $1', self.user_id)
+        await conn.execute('INSERT INTO users_icons VALUES($1, $2)', self.user_id, point)
+
+

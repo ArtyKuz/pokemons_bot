@@ -1,6 +1,3 @@
-import random
-import sqlite3
-
 import asyncpg
 from aiogram import Dispatcher
 from aiogram.dispatcher import FSMContext
@@ -8,15 +5,11 @@ from aiogram.types import CallbackQuery
 
 from FSM import FSMPokemon
 from keyboard.keyboards import create_inline_kb
-from services.classes import User, Pokemon
-from services.services import get_data, evolution_pokemon, start_fortune, buy_in_shop, \
-    get_pokemons_for_first_select, get_description
 from lexicon.lexicon import LEXICON
-
-# base = sqlite3.connect('Pokemon.db')
-# cur = base.cursor()
-# names_pokemons = [i[0] for i in cur.execute('SELECT Name FROM Pokemons').fetchall()]
-# base.close()
+from services.classes import User
+from services.services import (buy_in_shop, evolution_pokemon,
+                               get_description, get_pokemons_for_first_select,
+                               start_fortune)
 
 
 async def start_game(callback: CallbackQuery, conn: asyncpg.connection.Connection):

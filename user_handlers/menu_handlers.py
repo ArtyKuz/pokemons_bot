@@ -1,9 +1,9 @@
-from aiogram.types import Message, CallbackQuery
 from aiogram import Dispatcher
 from aiogram.dispatcher import FSMContext
+from aiogram.types import CallbackQuery, Message
 
-from keyboard.keyboards import create_inline_kb
 from FSM import FSMPokemon
+from keyboard.keyboards import create_inline_kb
 from lexicon.lexicon import LEXICON
 
 

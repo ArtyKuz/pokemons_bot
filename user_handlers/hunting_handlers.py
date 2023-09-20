@@ -1,18 +1,18 @@
 import random
-import sqlite3
-from datetime import date
 
 import asyncpg
 from aiogram import Dispatcher
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import Text
 from aiogram.types import CallbackQuery
+
 from FSM import FSMPokemon
 from keyboard.keyboards import create_inline_kb
-from services.classes import Pokemon, User
-from services.services import get_pokemon_for_hunting, get_fight, access_to_hunting, \
-    get_text_for_fight, get_description, create_pokemon_for_fight
 from lexicon.lexicon import LEXICON
+from services.classes import Pokemon, User
+from services.services import (access_to_hunting, create_pokemon_for_fight,
+                               get_description, get_fight,
+                               get_pokemon_for_hunting, get_text_for_fight)
 
 
 async def start_hunting(callback: CallbackQuery, state: FSMContext, conn: asyncpg.connection.Connection):
@@ -44,9 +44,7 @@ async def hunting_pokemons(callback: CallbackQuery, conn: asyncpg.connection.Con
     await callback.answer()
     await conn.execute('UPDATE users SET hunting_attempts = hunting_attempts - 1  WHERE user_id = $1',
                        callback.from_user.id)
-    pokemons = [i['pokemon_name'] for i in await conn.fetch(
-        'SELECT pokemon_name FROM users_pokemons JOIN pokemons USING(pokemon_id) '
-        'WHERE user_id = $1 AND energy > 0', callback.from_user.id)]
+    pokemons = await User(callback.from_user.id).get_pokemons_for_fight(conn)
     if pokemons:
         await callback.message.answer('Выбери своего покемона чтобы начать сражение!',
                                       reply_markup=create_inline_kb(2, *pokemons))
@@ -57,7 +55,8 @@ async def hunting_pokemons(callback: CallbackQuery, conn: asyncpg.connection.Con
 
 async def start_fight(callback: CallbackQuery, state: FSMContext, conn: asyncpg.connection.Connection):
     async with state.proxy() as data:
-        user_pokemon, enemy_pokemon = await create_pokemon_for_fight(callback.data, data['pokemon'], conn)
+        user_pokemon = await create_pokemon_for_fight(callback.data, conn)
+        enemy_pokemon = await create_pokemon_for_fight(data['pokemon'], conn)
         data['user_pokemon'] = user_pokemon
         data['enemy_pokemon'] = enemy_pokemon
         data['eat'] = await conn.fetchval('SELECT eat FROM users WHERE user_id = $1', callback.from_user.id)

@@ -1,6 +1,5 @@
 import asyncio
 import random
-import sqlite3
 from io import BytesIO
 
 import aioschedule
@@ -55,13 +54,9 @@ async def get_description(pokemon_name, conn: asyncpg.connection.Connection, ful
                       f'<b>Имеет преимущества над типами:</b>\n{superiority}'
 
 
-async def create_pokemon_for_fight(user_pokemon, enemy_pokemon, conn: asyncpg.connection.Connection):
-    description, superiority = await get_data(user_pokemon, conn)
-    user_pokemon = Pokemon(description, superiority)
-    description, superiority = await get_data(enemy_pokemon, conn)
-    enemy_pokemon = Pokemon(description, superiority)
-
-    return user_pokemon, enemy_pokemon
+async def create_pokemon_for_fight(pokemon, conn: asyncpg.connection.Connection):
+    description, superiority = await get_data(pokemon, conn)
+    return Pokemon(description, superiority)
 
 
 async def get_data(name_pokemon, conn: asyncpg.connection.Connection):
@@ -234,19 +229,6 @@ async def buy_in_shop(product, user_id, conn: asyncpg.connection.Connection):
     return False
 
 
-def update_icons(id, icon):
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        icons = cur.execute(f'SELECT icons FROM Users WHERE id = {id}').fetchone()[0]
-        if icons:
-            icons += f',{icon}'
-            cur.execute(f'UPDATE Users SET icons = "{icons}", point = point+1 WHERE id = {id}')
-            base.commit()
-        else:
-            cur.execute(f'UPDATE Users SET icons = "{icon}", point = point+1 WHERE id = {id}')
-            base.commit()
-
-
 def get_text_for_icons(point, text: str):
     new_text = text.split('\n')
     for i, line in enumerate(new_text[1:point], 1):
@@ -254,12 +236,10 @@ def get_text_for_icons(point, text: str):
     return '\n'.join(new_text)
 
 
-def access_to_pokemon_league(user_id):
-    with sqlite3.connect('Pokemon.db') as base:
-        cur = base.cursor()
-        if len(cur.execute(f'SELECT pokemons FROM Users WHERE id = {user_id}').fetchone()[0].split()) < 7:
-            return False
-        return True
+async def get_pokemons_icon(point, conn: asyncpg.connection.Connection):
+    return [i['pokemon_name'] for i in await conn.fetch('SELECT pokemon_name FROM pokemons '
+                                                        'JOIN icon_pokemons USING(pokemon_id) '
+                                                        'WHERE icon_id = $1', point)]
 
 
 async def recovery_energy(pool):
@@ -269,7 +249,6 @@ async def recovery_energy(pool):
 
 async def scheduler(pool):
     aioschedule.every().hour.at(":00").do(recovery_energy, pool=pool)
-    aioschedule.every().day.at()
     while True:
         await aioschedule.run_pending()
         await asyncio.sleep(1)

@@ -5,8 +5,8 @@ from aiogram.types import CallbackQuery
 
 from FSM import FSMPokemon
 from keyboard.keyboards import create_inline_kb
-from services.services import get_best_pokemons, get_description
 from lexicon.lexicon import LEXICON
+from services.services import get_best_pokemons, get_description
 
 
 async def start_pokedeks(callback: CallbackQuery):

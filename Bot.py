@@ -1,20 +1,18 @@
 import asyncio
 
 import asyncpg
-from aiogram import Bot, Dispatcher, executor, types
-from aiogram.types import Message
-from aiogram.contrib.fsm_storage.redis import RedisStorage2
+from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
+from config import DBConfig, TokenConfig, load_db_config, load_token_config
 from middlewares.middlewares import DBMiddleware
-from user_handlers.pokedeks_handlers import register_pokedeks_handlers
-from user_handlers.menu_handlers import register_menu_handlers
+from services.services import scheduler
 from user_handlers.game_handlers import register_game_handlers
 from user_handlers.hunting_handlers import register_hunting_handlers
-from user_handlers.pokemon_league_handlers import register_pokemon_league_handlers
-from config import TokenConfig, DBConfig, load_db_config, load_token_config
-from services.services import scheduler
-
+from user_handlers.menu_handlers import register_menu_handlers
+from user_handlers.pokedeks_handlers import register_pokedeks_handlers
+from user_handlers.pokemon_league_handlers import \
+    register_pokemon_league_handlers
 
 token_config: TokenConfig = load_token_config()
 db_config: DBConfig = load_db_config()
