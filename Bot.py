@@ -58,6 +58,3 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
-    # loop = asyncio.get_event_loop()
-    # loop.run_until_complete(create_pool())
-    # executor.start_polling(dp, skip_updates=True, on_startup=set_main_menu)
