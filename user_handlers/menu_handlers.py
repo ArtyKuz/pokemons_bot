@@ -15,7 +15,7 @@ async def start(message: Message):
 async def back_start(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.edit_text('Добро пожаловать в мир Покемонов!',
-                                  reply_markup=create_inline_kb(1, 'ИГРА 🎲', 'ПОКЕДЕКС 📖'))
+                                     reply_markup=create_inline_kb(1, 'ИГРА 🎲', 'ПОКЕДЕКС 📖'))
     await state.finish()
 
 

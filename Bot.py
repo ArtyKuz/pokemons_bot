@@ -6,7 +6,7 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
 from config import DBConfig, TokenConfig, load_db_config, load_token_config
 from middlewares.middlewares import DBMiddleware
-from services.services import scheduler
+from services.services import func_scheduler
 from user_handlers.game_handlers import register_game_handlers
 from user_handlers.hunting_handlers import register_hunting_handlers
 from user_handlers.menu_handlers import register_menu_handlers
@@ -43,7 +43,7 @@ async def main():
 
     # Добавляем мидлвари в диспетчер
     dp.middleware.setup(db_middleware)
-    asyncio.create_task(scheduler(pool))
+    asyncio.create_task(func_scheduler(pool))
 
     async with pool.acquire() as conn:
         types_pok = [i['name_type'] for i in await conn.fetch('SELECT name_type FROM types_pokemons')]

@@ -59,7 +59,7 @@ async def first_select(callback: CallbackQuery, state: FSMContext, conn: asyncpg
 
 
 # Просмотр списка личных покемонов
-async def watch_person_pokemons(callback: CallbackQuery, state: FSMContext, conn: asyncpg.connection.Connection):
+async def watch_person_pokemons(callback: CallbackQuery, conn: asyncpg.connection.Connection):
     await callback.answer()
     user_pokemons = await User(callback.from_user.id).get_pokemons(conn)
     await callback.message.answer('Ваши покемоны!', reply_markup=create_inline_kb(2, *user_pokemons,
@@ -100,19 +100,13 @@ async def evolution_pokemon_handler(callback: CallbackQuery, state: FSMContext, 
                                       reply_markup=create_inline_kb(1, 'Мои покемоны', 'Продолжить игру 🔄'))
 
 
-async def wheel_of_fortune(callback: CallbackQuery, state: FSMContext, conn: asyncpg.connection.Connection):
+async def wheel_of_fortune(callback: CallbackQuery):
     await callback.answer()
-    current_date = callback.message.date.date()
-    date_fortune = await conn.fetchval('SELECT date_fortune FROM users WHERE user_id = $1', callback.from_user.id)
-    if date_fortune != current_date:
-        await conn.execute('UPDATE users SET date_fortune = $1, fortune_attempts = 1 WHERE user_id = $2',
-                           current_date, callback.from_user.id)
-
     await callback.message.answer(LEXICON['wheel_Fortune'],
                                   reply_markup=create_inline_kb(1, 'Крутить колесо!', 'Вернуться в главное меню'))
 
 
-async def spin_wheel_fortune(callback: CallbackQuery, state: FSMContext, conn: asyncpg.connection.Connection):
+async def spin_wheel_fortune(callback: CallbackQuery, conn: asyncpg.connection.Connection):
     await callback.answer()
     select_fortune = await start_fortune(callback.from_user.id, conn)
     if select_fortune == 'eat':

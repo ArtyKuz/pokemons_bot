@@ -15,12 +15,8 @@ from services.services import (access_to_hunting, create_pokemon_for_fight,
                                get_pokemon_for_hunting, get_text_for_fight)
 
 
-async def start_hunting(callback: CallbackQuery, state: FSMContext, conn: asyncpg.connection.Connection):
-    current_date = callback.message.date.date()
-    date_hunting = await conn.fetchval('SELECT date_hunting FROM users WHERE user_id = $1', callback.from_user.id)
-    if date_hunting != current_date:
-        await conn.execute('UPDATE users SET date_hunting = $1, hunting_attempts = 10 WHERE user_id = $2',
-                           current_date, callback.from_user.id)
+async def start_hunting(callback: CallbackQuery):
+    await callback.answer()
     await callback.message.edit_text(f'{LEXICON["start_hunting"]}',
                                      reply_markup=create_inline_kb(1, 'Начать охоту', 'Вернуться в главное меню'))
 

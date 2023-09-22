@@ -1,8 +1,8 @@
 import asyncio
 import random
 from io import BytesIO
-
-import aioschedule
+from datetime import datetime
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import asyncpg
 from aiogram.types import InputFile
 
@@ -243,12 +243,22 @@ async def get_pokemons_icon(point, conn: asyncpg.connection.Connection):
 
 
 async def recovery_energy(pool):
+    print('recovery_energy')
     async with pool.acquire() as conn:
         await conn.execute('UPDATE users_pokemons SET energy = energy + 1 WHERE energy < 3')
 
 
-async def scheduler(pool):
-    aioschedule.every().hour.at(":00").do(recovery_energy, pool=pool)
+async def recovery_attempts(pool):
+    print('recovery_attempts')
+    async with pool.acquire() as conn:
+        await conn.execute('UPDATE users SET hunting_attempts = 10, fortune_attempts = 1')
+
+
+async def func_scheduler(pool):
+    scheduler = AsyncIOScheduler(timezone='Europe/Moscow')
+    start_date = datetime.now().replace(minute=0, second=0, microsecond=0)
+    scheduler.add_job(recovery_energy, trigger='interval', hours=1, start_date=start_date, args=[pool])
+    scheduler.add_job(recovery_attempts, 'cron', hour=0, minute=0, args=[pool])
+    scheduler.start()
     while True:
-        await aioschedule.run_pending()
         await asyncio.sleep(1)
